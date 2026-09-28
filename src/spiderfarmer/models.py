@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from spiderfarmer.errors import SpiderFarmerError
+
+_TOKEN = re.compile(r"[A-Z0-9]+")
+_STRIPS = {"PS10", "AC10", "PS5", "AC5", "PS"}
+_ROOM_KEYS = ("belonginRroom", "belonginRoom", "belongInRoom")
 
 
 @dataclass(frozen=True)
@@ -36,11 +41,16 @@ class Device:
 
 
 def topic_prefix(product_type: str) -> str:
-    """MQTT topic prefix for a ``productType`` string. Light controllers are ``LC``, strips ``PS``, everything else ``CB``."""
-    folded = product_type.upper()
-    if "LC" in folded or "LIGHT" in folded:
+    """MQTT topic prefix for a ``productType`` string.
+
+    Light controllers are ``LC``, strips ``PS``, everything else ``CB``.
+    Matching uses tokens, so a name like ``UPS`` is not treated as a strip.
+    S-Station and Display Panel types are not mapped yet, so they stay ``CB``.
+    """
+    tokens = _TOKEN.findall(product_type.upper())
+    if "LC" in tokens or any("LIGHT" in token for token in tokens):
         return "LC"
-    if any(token in folded for token in ("PS10", "AC10", "PS5", "AC5", "PS")):
+    if any(token in _STRIPS for token in tokens):
         return "PS"
     return "CB"
 
@@ -67,8 +77,8 @@ def session_from_login(payload: dict[str, Any]) -> Session:
 
 
 def room_from(record: dict[str, Any]) -> Room:
-    room_id = record.get("id")
-    if not isinstance(room_id, int):
+    room_id = _as_int(record.get("id"))
+    if room_id is None:
         raise _missing("room missing id")
     return Room(id=room_id, name=str(record.get("roomName") or ""), raw=record)
 
@@ -78,17 +88,51 @@ def device_from(record: dict[str, Any]) -> Device:
     product_type = str(record.get("productType") or "")
     if not serial or not product_type:
         raise _missing("device missing serial or productType")
-    room = record.get("belonginRroom")
     status = record.get("connectStatus")
     return Device(
         serial=serial,
         name=str(record.get("deviceName") or serial),
         product_type=product_type,
         prefix=topic_prefix(product_type),
-        room_id=room if isinstance(room, int) else None,
-        online=None if status is None else status == 1,
+        room_id=_room_id(record),
+        online=_online(status),
         raw=record,
     )
+
+
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        digits = text[1:] if text.startswith("-") else text
+        if digits.isdigit():
+            return int(text)
+    return None
+
+
+def _room_id(record: dict[str, Any]) -> int | None:
+    for key in _ROOM_KEYS:
+        if key in record:
+            return _as_int(record.get(key))
+    return None
+
+
+def _online(status: Any) -> bool | None:
+    if status is None:
+        return None
+    if isinstance(status, bool):
+        return status
+    if isinstance(status, int):
+        return status == 1
+    if isinstance(status, str):
+        text = status.strip()
+        digits = text[1:] if text.startswith("-") else text
+        if digits.isdigit():
+            return int(text) == 1
+    return None
 
 
 def _data_object(payload: dict[str, Any]) -> dict[str, Any]:
@@ -98,9 +142,9 @@ def _data_object(payload: dict[str, Any]) -> dict[str, Any]:
         raise SpiderFarmerError(code or "?", str(msg) if msg is not None else "request failed")
     data = payload.get("data")
     if not isinstance(data, dict):
-        raise SpiderFarmerError("000", "missing data")
+        raise SpiderFarmerError("parse", "missing data")
     return data
 
 
 def _missing(msg: str) -> SpiderFarmerError:
-    return SpiderFarmerError("000", msg)
+    return SpiderFarmerError("parse", msg)

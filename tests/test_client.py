@@ -1,9 +1,12 @@
 import json
 import unittest
+import uuid
+
+import requests
 
 from spiderfarmer import Client, SpiderFarmerError
-from spiderfarmer.envelope import decrypt_body, encrypt_body
-from spiderfarmer.models import Session
+from spiderfarmer.envelope import decode_response, decrypt_body, encrypt_body
+from spiderfarmer.models import Session, device_from, room_from
 
 
 def _response(text: str, status: int = 200):
@@ -143,7 +146,140 @@ class InventoryTests(unittest.TestCase):
         self.assertTrue(devices[0].online)
 
 
+class RecordTests(unittest.TestCase):
+    def test_string_room_id_and_alternate_device_keys(self) -> None:
+        room = room_from({"id": "7", "roomName": "Tent"})
+        self.assertEqual(room.id, 7)
+        device = device_from(
+            {
+                "deviceSerialnum": "ABC",
+                "productType": "SF-GGS-CB",
+                "belonginRoom": "7",
+                "connectStatus": "1",
+            }
+        )
+        self.assertEqual(device.room_id, 7)
+        self.assertTrue(device.online)
+        spelled = device_from(
+            {
+                "deviceSerialnum": "ABC",
+                "productType": "SF-GGS-CB",
+                "belongInRoom": 4,
+            }
+        )
+        self.assertEqual(spelled.room_id, 4)
+        self.assertIsNone(spelled.online)
+
+    def test_cloud_room_typo_wins(self) -> None:
+        device = device_from(
+            {
+                "deviceSerialnum": "ABC",
+                "productType": "SF-GGS-CB",
+                "belonginRroom": 3,
+                "belonginRoom": 9,
+            }
+        )
+        self.assertEqual(device.room_id, 3)
+
+    def test_bad_room_id_is_parse(self) -> None:
+        with self.assertRaises(SpiderFarmerError) as caught:
+            room_from({"id": True, "roomName": "Tent"})
+        self.assertEqual(caught.exception.code, "parse")
+        self.assertEqual(caught.exception.msg, "room missing id")
+
+
+class TransportTests(unittest.TestCase):
+    def test_timeout_tls_dns_and_http_message(self) -> None:
+        def timeout(url, data=None, headers=None, timeout=None):  # noqa: ANN001
+            raise requests.Timeout("slow")
+
+        with self.assertRaises(SpiderFarmerError) as caught:
+            Client(post=timeout).login("a@b.c", "secret", now_s=1)
+        self.assertEqual(caught.exception.code, "timeout")
+
+        def tls(url, data=None, headers=None, timeout=None):  # noqa: ANN001
+            raise requests.exceptions.SSLError("bad cert")
+
+        with self.assertRaises(SpiderFarmerError) as caught:
+            Client(post=tls).login("a@b.c", "secret", now_s=1)
+        self.assertEqual(caught.exception.code, "tls")
+
+        def dns(url, data=None, headers=None, timeout=None):  # noqa: ANN001
+            raise requests.ConnectionError("HTTPSConnectionPool: getaddrinfo failed")
+
+        with self.assertRaises(SpiderFarmerError) as caught:
+            Client(post=dns).login("a@b.c", "secret", now_s=1)
+        self.assertEqual(caught.exception.code, "dns")
+
+        def refused(url, data=None, headers=None, timeout=None):  # noqa: ANN001
+            raise requests.ConnectionError("connection refused")
+
+        with self.assertRaises(SpiderFarmerError) as caught:
+            Client(post=refused).login("a@b.c", "secret", now_s=1)
+        self.assertEqual((caught.exception.code, caught.exception.msg), ("network", "unreachable"))
+
+        def locked(url, data=None, headers=None, timeout=None):  # noqa: ANN001
+            return _response(json.dumps({"code": "100", "msg": "locked"}), status=400)
+
+        with self.assertRaises(SpiderFarmerError) as caught:
+            Client(post=locked).login("a@b.c", "secret", now_s=1)
+        self.assertEqual((caught.exception.code, caught.exception.msg), ("400", "locked"))
+
+        def html(url, data=None, headers=None, timeout=None):  # noqa: ANN001
+            return _response("<html>nope</html>", status=502)
+
+        with self.assertRaises(SpiderFarmerError) as caught:
+            Client(post=html).login("a@b.c", "secret", now_s=1)
+        self.assertEqual((caught.exception.code, caught.exception.msg), ("502", "http"))
+
+    def test_device_id_defaults_to_a_uuid(self) -> None:
+        seen: dict[str, object] = {}
+
+        def post(url, data=None, headers=None, timeout=None):  # noqa: ANN001
+            seen["headers"] = headers
+            return _response(
+                encrypt_body(
+                    {
+                        "code": "000",
+                        "data": {
+                            "mqttName": "a@b.c",
+                            "mqttPwd": "broker-secret",
+                            "userId": 42,
+                            "token": "rest-token",
+                        },
+                    }
+                )
+            )
+
+        client = Client(post=post)
+        client.login("a@b.c", "secret", now_s=1)
+        system = json.loads(seen["headers"]["systemdata"])
+        self.assertEqual(system["deviceId"], client.device_id)
+        self.assertNotEqual(client.device_id, "spiderfarmer")
+        uuid.UUID(client.device_id)
+        pinned = Client(device_id="phone-1", post=post)
+        pinned.login("a@b.c", "secret", now_s=1)
+        self.assertEqual(json.loads(seen["headers"]["systemdata"])["deviceId"], "phone-1")
+
+    def test_non_integer_user_id_is_parse(self) -> None:
+        session = Session(token="rest-token", mqtt_name="a@b.c", mqtt_pwd="broker-secret", user_id="nope", raw={})
+
+        def post(url, data=None, headers=None, timeout=None):  # noqa: ANN001
+            raise AssertionError("posted")
+
+        with self.assertRaises(SpiderFarmerError) as caught:
+            Client(post=post).devices(session, 7)
+        self.assertEqual(caught.exception.code, "parse")
+
+
 class EnvelopeTests(unittest.TestCase):
+    def test_response_shapes(self) -> None:
+        body = {"code": "000", "msg": "ok"}
+        self.assertEqual(decode_response(json.dumps(body)), body)
+        cipher = encrypt_body(body)
+        self.assertEqual(decode_response(cipher), body)
+        self.assertEqual(decode_response(json.dumps(cipher)), body)
+
     def test_block_aligned_plaintext_still_roundtrips(self) -> None:
         body = {"email": "abcd@ef.gh", "loginMethod": 1, "password": "0123456789abcdef0123456789ab"}
         raw = json.dumps(body, separators=(",", ":")).encode()

@@ -1,6 +1,6 @@
-# spiderfarmer
+# Spider Farmer cloud API
 
-Log in to your own Spider Farmer account from Python and read your tents over the same cloud the official app uses. [MIT](LICENSE) licensed.
+Unofficial Python client for the Spider Farmer cloud API. Log in with an account you own and read rooms, devices, and live readings from the same cloud the official app uses. [MIT](LICENSE) licensed.
 
 **No liability.** The authors of this repository accept no liability, of any kind, for anything that happens because you use, copy, modify, or rely on this software. That includes dead plants, damaged lights, fans, or controllers, a locked or banned account, lost data, wrong readings, downtime, and any claim by Spider Farmer or anyone else. There is no warranty. You use it entirely at your own risk. If you cannot accept that, do not use it.
 
@@ -11,10 +11,20 @@ Unofficial. Not affiliated with Spider Farmer. The cloud can change or reject th
 Python 3.11 or newer.
 
 ```bash
-pip install "spiderfarmer[mqtt] @ git+https://github.com/zeroXmrcl/spider-farmer.git"
+pip install "spiderfarmer[mqtt] @ git+https://github.com/zeroXmrcl/spider-farmer-cloud-api.git"
 ```
 
 `spiderfarmer` without `[mqtt]` is the same install if you only need login and the device list. This package is not on PyPI. The command above installs it from GitHub.
+
+In another project's `pyproject.toml`:
+
+```toml
+dependencies = [
+  "spiderfarmer[mqtt] @ git+https://github.com/zeroXmrcl/spider-farmer-cloud-api.git",
+]
+```
+
+Drop `[mqtt]` when that project only lists rooms and devices. Then `from spiderfarmer import Client`.
 
 ## Quick start
 
@@ -37,7 +47,9 @@ The password is the account password as you type it. It is not an MD5 hash.
 
 ## Live readings
 
-Temperature and device state are not in the device list. Subscribe to the `UP` topic, then ask on `DOWN`.
+Temperature and device state are not in the device list. This needs the `[mqtt]` extra from the install command above. Without it, `connect()` raises `SpiderFarmerError`. `MqttSession` is also exported from `spiderfarmer`.
+
+Subscribe to the `UP` topic, ask on `DOWN`, then `wait` for the reading. `connect` blocks until the broker accepts the session.
 
 ```python
 from spiderfarmer.mqtt import MqttSession
@@ -46,12 +58,13 @@ mqtt = MqttSession(session)
 mqtt.connect()
 mqtt.subscribe(device.prefix, device.serial)
 mqtt.publish(device.prefix, device.serial, "getDevSta")
+print(mqtt.wait())
 mqtt.close()
 ```
 
-`device.prefix` is `CB` for a control box, `LC` for a light controller, and `PS` for a power strip.
+`device.prefix` is `CB` for a control box, `LC` for a light controller, and `PS` for a power strip. S-Station and Display Panel product types are not mapped yet, so they stay `CB`.
 
-Commands that start with `set` change the hardware. They are refused unless you pass `writes=True`.
+Commands that start with `set` change the hardware. They are refused unless writes are enabled. `MqttSession(session, writes=True)` allows every `set*` call. `publish(..., writes=True)` allows that one call.
 
 ```python
 mqtt.publish(device.prefix, device.serial, "setLight", {"level": 40}, writes=True)
@@ -66,7 +79,7 @@ mqtt.publish(device.prefix, device.serial, "setLight", {"level": 40}, writes=Tru
 | `Client.call` | Any other `/api/ios/.../v2` path. `body=None` sends an empty body |
 | `MqttSession` | MQTT 3.1 on `sf.mqtt.spider-farmer.com:8883`, with the broker CA pinned |
 
-`Client(timezone="Europe/Berlin", device_id="spiderfarmer", timeout=20)` follows the Spider Farmer iOS app 2.5.2. Change `timezone` if your account is not in Berlin.
+`Client(timezone="Europe/Berlin", timeout=20)` follows the Spider Farmer iOS app 2.5.2. Change `timezone` if your account is not in Berlin. `device_id` defaults to a new UUID on each `Client`. Pass a stable id and keep it if you do not want every run to look like a new phone.
 
 Only call this with an account you own. A wrong password comes back as code `100`. The cloud can lock that login for about two hours. An Apple-only account has no email password until you set one in the app.
 
@@ -85,7 +98,7 @@ The body is Base64 of AES-128-CBC ciphertext. Key `Meizhi1234567890`, IV `123456
 
 `loginMethod` is the number `1`, not the string `"1"`. Success is `code` equal to `"000"`. The same key decrypts the response.
 
-Device list sends `belonginRoomId` and `userId` as numbers. That spelling is the cloud's. Topics are `SF/GGS/{CB|PS|LC}/API/UP/{SERIAL}` and `.../DOWN/{SERIAL}`. The MQTT client id is `{userId}_{unixSeconds}`.
+Device list sends `belonginRoomId` and `userId` as numbers. That spelling is the cloud's. Topics are `SF/GGS/{CB|PS|LC}/API/UP/{SERIAL}` and `.../DOWN/{SERIAL}`. The MQTT client id starts with `{userId}_`, is unique per connect, and is at most 23 characters.
 
 </details>
 

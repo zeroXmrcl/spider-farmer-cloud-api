@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import uuid
 from typing import Any, Callable
 
 import requests
@@ -24,14 +25,14 @@ class Client:
         *,
         base_url: str = API,
         timezone: str = "Europe/Berlin",
-        device_id: str = "spiderfarmer",
+        device_id: str | None = None,
         app_version: str = "2.5.2",
         timeout: float = 20,
         post: Post = requests.post,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timezone = timezone
-        self.device_id = device_id
+        self.device_id = str(uuid.uuid4()) if device_id is None else device_id
         self.app_version = app_version
         self.timeout = timeout
         self._post = post
@@ -53,7 +54,7 @@ class Client:
         try:
             user_id = int(session.user_id)
         except ValueError as exc:
-            raise SpiderFarmerError("000", "userId is not an integer") from exc
+            raise SpiderFarmerError("parse", "userId is not an integer") from exc
         payload = self.call(
             "/api/ios/udm/getDeviceList/v2",
             {"belonginRoomId": room_id, "userId": user_id},
@@ -94,10 +95,18 @@ class Client:
             )
         except SpiderFarmerError:
             raise
+        except requests.Timeout as exc:
+            raise SpiderFarmerError("timeout", "timed out") from exc
+        except requests.exceptions.SSLError as exc:
+            raise SpiderFarmerError("tls", "tls failed") from exc
+        except requests.ConnectionError as exc:
+            if _dns_failure(exc):
+                raise SpiderFarmerError("dns", "dns failed") from exc
+            raise SpiderFarmerError("network", "unreachable") from exc
         except Exception as exc:
             raise SpiderFarmerError("network", "unreachable") from exc
         if response.status_code != 200:
-            raise SpiderFarmerError(str(response.status_code), "http")
+            raise SpiderFarmerError(str(response.status_code), _http_message(response.text))
         payload = decode_response(response.text)
         code = "" if payload.get("code") is None else str(payload.get("code"))
         if code != "000":
@@ -111,10 +120,39 @@ def _data_list(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if data is None:
         return []
     if not isinstance(data, list):
-        raise SpiderFarmerError("000", "expected a list")
+        raise SpiderFarmerError("parse", "expected a list")
     rows: list[dict[str, Any]] = []
     for item in data:
         if not isinstance(item, dict):
-            raise SpiderFarmerError("000", "expected objects")
+            raise SpiderFarmerError("parse", "expected objects")
         rows.append(item)
     return rows
+
+
+def _dns_failure(exc: BaseException) -> bool:
+    parts = [str(exc)]
+    cause = exc.__cause__ or exc.__context__
+    if cause is not None:
+        parts.append(str(cause))
+    text = " ".join(parts).lower()
+    return any(
+        token in text
+        for token in (
+            "getaddrinfo",
+            "name or service not known",
+            "nodename nor servname",
+            "name resolution",
+            "failed to resolve",
+        )
+    )
+
+
+def _http_message(text: str) -> str:
+    try:
+        payload = decode_response(text)
+    except SpiderFarmerError:
+        return "http"
+    msg = payload.get("msg")
+    if msg is None:
+        return "http"
+    return str(msg)

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -10,10 +10,24 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
+keywords = ["spider-farmer", "spiderfarmer", "cloud-api", "mqtt", "ggs"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
+]
 dependencies = [
     "cryptography>=44",
     "requests>=2.32",
 ]
+
+[project.urls]
+Homepage = "https://github.com/zeroXmrcl/spider-farmer-cloud-api"
+Repository = "https://github.com/zeroXmrcl/spider-farmer-cloud-api"
 
 [project.optional-dependencies]
 mqtt = ["paho-mqtt>=2.1"]
