@@ -71,9 +71,10 @@ def systemdata(
     device_id: str = "spiderfarmer",
     app_version: str = "2.5.2",
     timezone: str = "Europe/Berlin",
+    req_id: int | None = None,
 ) -> str:
     header: dict[str, Any] = {
-        "reqId": now_s * 1000,
+        "reqId": now_s * 1000 if req_id is None else req_id,
         "appVersion": app_version,
         "osType": "iOS",
         "osVersion": "27.0",

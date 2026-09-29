@@ -1,6 +1,7 @@
 import json
 import unittest
 import uuid
+from unittest.mock import patch
 
 import requests
 
@@ -93,6 +94,20 @@ class LoginTests(unittest.TestCase):
 
 
 class InventoryTests(unittest.TestCase):
+    def test_back_to_back_calls_do_not_reuse_req_id(self) -> None:
+        seen: list[int] = []
+
+        def post(url, data=None, headers=None, timeout=None):  # noqa: ANN001
+            seen.append(json.loads(headers["systemdata"])["reqId"])
+            return _response(encrypt_body({"code": "000", "data": []}))
+
+        client = Client(post=post)
+        with patch("spiderfarmer.client._request_clock_ms", return_value=5_000):
+            client.rooms(_session())
+            client.rooms(_session())
+        self.assertEqual(seen, [5_000, 5_001])
+
+
     def test_rooms_use_an_empty_body_and_read_the_name(self) -> None:
         seen: dict[str, object] = {}
 

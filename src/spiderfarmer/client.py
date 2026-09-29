@@ -36,6 +36,7 @@ class Client:
         self.app_version = app_version
         self.timeout = timeout
         self._post = post
+        self._last_req_id = 0
 
     def login(self, email: str, password: str, *, now_s: int | None = None) -> Session:
         payload = self.call(
@@ -83,6 +84,7 @@ class Client:
                 device_id=self.device_id,
                 app_version=self.app_version,
                 timezone=self.timezone,
+                req_id=self._request_id(stamp, explicit=now_s is not None),
             ),
         }
         data = None if body is None else encrypt_body(body)
@@ -113,6 +115,19 @@ class Client:
             msg = payload.get("msg")
             raise SpiderFarmerError(code or "?", str(msg) if msg is not None else "request failed")
         return payload
+
+    def _request_id(self, stamp: int, *, explicit: bool) -> int:
+        if explicit:
+            return stamp * 1000
+        req_id = _request_clock_ms()
+        if req_id <= self._last_req_id:
+            req_id = self._last_req_id + 1
+        self._last_req_id = req_id
+        return req_id
+
+
+def _request_clock_ms() -> int:
+    return time.time_ns() // 1_000_000
 
 
 def _data_list(payload: dict[str, Any]) -> list[dict[str, Any]]:

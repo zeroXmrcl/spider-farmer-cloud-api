@@ -88,7 +88,7 @@ Only call this with an account you own. A wrong password comes back as code `100
 
 `POST https://api.spider-farmer.com/api/ios/ulogin/mailLogin/v2`
 
-Headers: `Content-Type: application/json`, `User-Agent: Dart/3.5 (dart:io)`, and a compact `systemdata` JSON header. After login, `systemdata` also carries `token`.
+Headers: `Content-Type: application/json`, `User-Agent: Dart/3.5 (dart:io)`, and a compact `systemdata` JSON header. After login, `systemdata` also carries `token`. `reqId` has to be unique per call. Reusing one in the same second comes back as `request replay`.
 
 The body is Base64 of AES-128-CBC ciphertext. Key `Meizhi1234567890`, IV `1234567890123456`, PKCS7 padding. The IV is not prepended. Login plaintext, with no spaces:
 
