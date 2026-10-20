@@ -1,6 +1,6 @@
 # Spider Farmer cloud API
 
-Unofficial Python client for the Spider Farmer cloud API. Log in with an account you own and read rooms, devices, and live readings from the same cloud the official app uses. [MIT](LICENSE) licensed.
+Unofficial Python client for the Spider Farmer cloud API. Log in with an account you own and read rooms, devices, and live readings from the same cloud the official app uses. Licensed under [PolyForm Noncommercial 1.0.0](LICENSE).
 
 **No liability.** The authors of this repository accept no liability, of any kind, for anything that happens because you use, copy, modify, or rely on this software. That includes dead plants, damaged lights, fans, or controllers, a locked or banned account, lost data, wrong readings, downtime, and any claim by Spider Farmer or anyone else. There is no warranty. You use it entirely at your own risk. If you cannot accept that, do not use it.
 
@@ -110,8 +110,10 @@ The authors of this repository accept no liability whatsoever. Not for plants, h
 
 The software is provided as is. There is no warranty of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. To the maximum extent the law allows, the authors are not liable for any claim, damages, or other liability, whether in contract, tort, or otherwise, arising from this software or from your use of it.
 
-The [MIT license](LICENSE) says the same thing in license language. The paragraphs above are the plain-language version, and they are the condition of using this repository. If you need a warranty or someone to blame, this is the wrong project.
+The [license](LICENSE) says the same thing in license language. The paragraphs above are the plain-language version, and they are the condition of using this repository. If you need a warranty or someone to blame, this is the wrong project.
 
 ## License
 
-[MIT](LICENSE). You can use this in your own project. You still carry the risk described above.
+[PolyForm Noncommercial 1.0.0](LICENSE). You may use this in your own noncommercial project; commercial use is not permitted. You still carry the risk described above.
+
+Copyright 2026 [zeroXmrcl](https://github.com/zeroXmrcl).
